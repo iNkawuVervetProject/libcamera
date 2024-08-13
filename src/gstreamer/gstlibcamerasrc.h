@@ -48,3 +48,58 @@ gst_libcamera_auto_focus_get_type()
 
 	return type;
 }
+
+inline GType
+gst_libcamera_awb_get_type()
+{
+	static GType type = 0;
+	static const GEnumValue values[] = {
+		{ 0, NULL, NULL },
+		{
+			static_cast<gint>(libcamera::controls::AwbAuto),
+			"AwbAuto",
+			"awb-auto",
+		},
+		{
+			static_cast<gint>(libcamera::controls::AwbIncandescent),
+			"AwbIncandescent",
+			"awb-incandescent",
+		},
+		{
+			static_cast<gint>(libcamera::controls::AwbTungsten),
+			"AwbTungsten",
+			"awb-tungsten",
+		},
+		{
+			static_cast<gint>(libcamera::controls::AwbFluorescent),
+			"AwbFluorescent",
+			"awb-fluorescent",
+		},
+		{
+			static_cast<gint>(libcamera::controls::AwbIndoor),
+			"AwbIndoor",
+			"awb-indoor",
+		},
+		{
+			static_cast<gint>(libcamera::controls::AwbDaylight),
+			"AwbDaylight",
+			"awb-daylight",
+		},
+		{
+			static_cast<gint>(libcamera::controls::AwbCloudy),
+			"AwbCloudy",
+			"awb-cloudy",
+		},
+		{
+			static_cast<gint>(libcamera::controls::AwbCustom),
+			"AwbCustom",
+			"awb-custom",
+		},
+
+	};
+
+	if (!type)
+		type = g_enum_register_static("GstLibcameraAutoFocus", values);
+
+	return type;
+}
