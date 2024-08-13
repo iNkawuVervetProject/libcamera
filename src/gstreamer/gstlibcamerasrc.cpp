@@ -37,10 +37,14 @@
 
 #include <gst/base/base.h>
 
+#include "gst/gstbuffer.h"
+#include "gst/gstcaps.h"
+#include "gst/gstclock.h"
+
+#include "gstlibcamera-utils.h"
 #include "gstlibcameraallocator.h"
 #include "gstlibcamerapad.h"
 #include "gstlibcamerapool.h"
-#include "gstlibcamera-utils.h"
 
 using namespace libcamera;
 
@@ -59,6 +63,7 @@ struct RequestWrap {
 
 	GstClockTime latency_;
 	GstClockTime pts_;
+	GstClockTime rts_ = GST_CLOCK_TIME_NONE;
 };
 
 RequestWrap::RequestWrap(std::unique_ptr<Request> request)
@@ -146,6 +151,7 @@ struct _GstLibcameraSrc {
 	std::optional<controls::AwbModeEnum> awb_mode;
 	std::optional<controls::AfRangeEnum> auto_focus_range;
 	std::optional<float> lens_position;
+	bool unix_timestamp_enable = false;
 
 	std::atomic<GstEvent *> pending_eos;
 
@@ -161,6 +167,7 @@ enum {
 	PROP_AWB_MODE,
 	PROP_AUTO_FOCUS_RANGE,
 	PROP_LENS_POSITION,
+	PROP_UNIX_TIMESTAMP_ENABLE,
 };
 
 G_DEFINE_TYPE_WITH_CODE(GstLibcameraSrc, gst_libcamera_src, GST_TYPE_ELEMENT,
@@ -220,8 +227,7 @@ int GstLibcameraSrcState::queueRequest()
 	return 0;
 }
 
-void
-GstLibcameraSrcState::requestCompleted(Request *request)
+void GstLibcameraSrcState::requestCompleted(Request *request)
 {
 	GST_DEBUG_OBJECT(src_, "buffers are ready");
 
@@ -247,11 +253,20 @@ GstLibcameraSrcState::requestCompleted(Request *request)
 		GstClockTime gst_now = gst_clock_get_time(GST_ELEMENT_CLOCK(src_));
 		/* \todo Need to expose which reference clock the timestamp relates to. */
 		GstClockTime sys_now = g_get_monotonic_time() * 1000;
+		GstClockTime rtc_now = src_->unix_timestamp_enable == false
+					       ? GST_CLOCK_TIME_NONE
+					       : g_get_real_time() * 1000;
 
 		/* Deduced from: sys_now - sys_base_time == gst_now - gst_base_time */
 		GstClockTime sys_base_time = sys_now - (gst_now - gst_base_time);
 		wrap->pts_ = timestamp - sys_base_time;
 		wrap->latency_ = sys_now - timestamp;
+
+		if (GST_CLOCK_TIME_IS_VALID(rtc_now)) {
+			/* Deduced from : rtc_now - rtc_base_time == gst_now - gst_base_time */
+			GstClockTime rtc_base_time = rtc_now - (gst_now - gst_base_time);
+			wrap->rts_ = wrap->pts_ + rtc_base_time;
+		}
 	}
 
 	{
@@ -297,6 +312,14 @@ int GstLibcameraSrcState::processRequest()
 			gst_libcamera_pad_set_latency(srcpad, wrap->latency_);
 		} else {
 			GST_BUFFER_PTS(buffer) = 0;
+		}
+
+		if (GST_CLOCK_TIME_IS_VALID(wrap->rts_)) {
+			static GstStaticCaps unix_reference = GST_STATIC_CAPS("timestamp/x-unix");
+			gst_buffer_add_reference_timestamp_meta(buffer,
+								gst_static_caps_get(&unix_reference),
+								wrap->rts_ - wrap->latency_,
+								GST_CLOCK_TIME_NONE);
 		}
 
 		GST_BUFFER_OFFSET(buffer) = fb->metadata().sequence;
@@ -789,6 +812,9 @@ gst_libcamera_src_set_property(GObject *object, guint prop_id,
 	case PROP_LENS_POSITION:
 		self->lens_position = g_value_get_float(value);
 		break;
+	case PROP_UNIX_TIMESTAMP_ENABLE:
+		self->unix_timestamp_enable = g_value_get_boolean(value);
+		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
 		break;
@@ -817,6 +843,10 @@ gst_libcamera_src_get_property(GObject *object, guint prop_id, GValue *value,
 		break;
 	case PROP_LENS_POSITION:
 		g_value_set_float(value, self->lens_position.value_or(0.0));
+		break;
+
+	case PROP_UNIX_TIMESTAMP_ENABLE:
+		g_value_set_boolean(value, self->unix_timestamp_enable);
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -1051,4 +1081,14 @@ gst_libcamera_src_class_init(GstLibcameraSrcClass *klass)
 				 G_PARAM_WRITABLE);
 
 	g_object_class_install_property(object_class, PROP_LENS_POSITION, spec);
+
+	spec = g_param_spec_enum("unix-timestamp",
+				 "Enable Unix timestamping of buffers",
+				 "Enables additional timestamping information through the "
+				 "timestamp/x-unix caps.",
+				 G_TYPE_BOOLEAN,
+				 false,
+				 G_PARAM_WRITABLE);
+
+	g_object_class_install_property(object_class, PROP_UNIX_TIMESTAMP_ENABLE, spec);
 }
