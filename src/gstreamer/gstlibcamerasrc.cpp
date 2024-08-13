@@ -41,6 +41,7 @@
 #include "gst/gstcaps.h"
 #include "gst/gstclock.h"
 
+#include "glibconfig.h"
 #include "gstlibcamera-utils.h"
 #include "gstlibcameraallocator.h"
 #include "gstlibcamerapad.h"
@@ -1071,24 +1072,24 @@ gst_libcamera_src_class_init(GstLibcameraSrcClass *klass)
 
 	g_object_class_install_property(object_class, PROP_AUTO_FOCUS_RANGE, spec);
 
-	spec = g_param_spec_enum("lens-position",
-				 "Set lens position",
-				 "Set the lens position so an object at 1 / lens-position is "
-				 "focused. Only works if 'auto-focus-mode' is set to "
-				 "AfModeManual.",
-				 G_TYPE_FLOAT,
-				 0.0,
-				 G_PARAM_WRITABLE);
+	spec = g_param_spec_float("lens-position",
+				  "Set lens position",
+				  "Set the lens position so an object at 1 / lens-position is "
+				  "focused. Only works if 'auto-focus-mode' is set to "
+				  "AfModeManual.",
+				  0.0,
+				  G_MAXFLOAT,
+				  0.0,
+				  G_PARAM_WRITABLE);
 
 	g_object_class_install_property(object_class, PROP_LENS_POSITION, spec);
 
-	spec = g_param_spec_enum("unix-timestamp",
-				 "Enable Unix timestamping of buffers",
-				 "Enables additional timestamping information through the "
-				 "timestamp/x-unix caps.",
-				 G_TYPE_BOOLEAN,
-				 false,
-				 G_PARAM_WRITABLE);
+	spec = g_param_spec_boolean("unix-timestamp",
+				    "Enable Unix timestamping of buffers",
+				    "Enables additional timestamping information through the "
+				    "timestamp/x-unix caps.",
+				    false,
+				    G_PARAM_WRITABLE);
 
 	g_object_class_install_property(object_class, PROP_UNIX_TIMESTAMP_ENABLE, spec);
 }
