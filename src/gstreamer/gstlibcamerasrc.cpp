@@ -145,6 +145,7 @@ struct _GstLibcameraSrc {
 	std::optional<controls::AfModeEnum> auto_focus_mode;
 	std::optional<controls::AwbModeEnum> awb_mode;
 	std::optional<controls::AfRangeEnum> auto_focus_range;
+	std::optional<float> lens_position;
 
 	std::atomic<GstEvent *> pending_eos;
 
@@ -159,6 +160,7 @@ enum {
 	PROP_AUTO_FOCUS_MODE,
 	PROP_AWB_MODE,
 	PROP_AUTO_FOCUS_RANGE,
+	PROP_LENS_POSITION,
 };
 
 G_DEFINE_TYPE_WITH_CODE(GstLibcameraSrc, gst_libcamera_src, GST_TYPE_ELEMENT,
@@ -697,6 +699,17 @@ gst_libcamera_src_task_enter(GstTask *task, [[maybe_unused]] GThread *thread,
 		}
 	}
 
+	if (self->lens_position.has_value()) {
+		if (infoMap.find(&controls::LensPosition) != infoMap.end()) {
+			state->initControls_.set(controls::LensPosition, self->lens_position.value());
+		} else {
+			GST_ELEMENT_ERROR(self, RESOURCE, SETTINGS,
+					  ("Failed to set lens position"),
+					  ("LensPosition not supported by this camera, please "
+					   "retry without setting 'lens-position'"));
+		}
+	}
+
 	ret = state->cam_->start(&state->initControls_);
 	if (ret) {
 		GST_ELEMENT_ERROR(self, RESOURCE, SETTINGS,
@@ -773,6 +786,9 @@ gst_libcamera_src_set_property(GObject *object, guint prop_id,
 	case PROP_AUTO_FOCUS_RANGE:
 		self->auto_focus_range = static_cast<controls::AfRangeEnum>(g_value_get_enum(value));
 		break;
+	case PROP_LENS_POSITION:
+		self->lens_position = g_value_get_float(value);
+		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
 		break;
@@ -798,6 +814,9 @@ gst_libcamera_src_get_property(GObject *object, guint prop_id, GValue *value,
 		break;
 	case PROP_AUTO_FOCUS_RANGE:
 		g_value_set_enum(value, static_cast<gint>(self->auto_focus_range.value_or(controls::AfRangeNormal)));
+		break;
+	case PROP_LENS_POSITION:
+		g_value_set_float(value, self->lens_position.value_or(0.0));
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -1021,4 +1040,15 @@ gst_libcamera_src_class_init(GstLibcameraSrcClass *klass)
 				 G_PARAM_WRITABLE);
 
 	g_object_class_install_property(object_class, PROP_AUTO_FOCUS_RANGE, spec);
+
+	spec = g_param_spec_enum("lens-position",
+				 "Set lens position",
+				 "Set the lens position so an object at 1 / lens-position is "
+				 "focused. Only works if 'auto-focus-mode' is set to "
+				 "AfModeManual.",
+				 G_TYPE_FLOAT,
+				 0.0,
+				 G_PARAM_WRITABLE);
+
+	g_object_class_install_property(object_class, PROP_LENS_POSITION, spec);
 }
