@@ -144,6 +144,7 @@ struct _GstLibcameraSrc {
 	gchar *camera_name;
 	std::optional<controls::AfModeEnum> auto_focus_mode;
 	std::optional<controls::AwbModeEnum> awb_mode;
+	std::optional<controls::AfRangeEnum> auto_focus_range;
 
 	std::atomic<GstEvent *> pending_eos;
 
@@ -157,6 +158,7 @@ enum {
 	PROP_CAMERA_NAME,
 	PROP_AUTO_FOCUS_MODE,
 	PROP_AWB_MODE,
+	PROP_AUTO_FOCUS_RANGE,
 };
 
 G_DEFINE_TYPE_WITH_CODE(GstLibcameraSrc, gst_libcamera_src, GST_TYPE_ELEMENT,
@@ -660,15 +662,38 @@ gst_libcamera_src_task_enter(GstTask *task, [[maybe_unused]] GThread *thread,
 		gst_pad_push_event(srcpad, gst_event_new_segment(&segment));
 	}
 
+	const ControlInfoMap &infoMap = state->cam_->controls();
+
 	if (self->auto_focus_mode.has_value()) {
-		const ControlInfoMap &infoMap = state->cam_->controls();
 		if (infoMap.find(&controls::AfMode) != infoMap.end()) {
 			state->initControls_.set(controls::AfMode, self->auto_focus_mode.value());
 		} else {
 			GST_ELEMENT_ERROR(self, RESOURCE, SETTINGS,
 					  ("Failed to enable auto focus"),
 					  ("AfMode not supported by this camera, "
-					   "please retry with 'auto-focus-mode=AfModeManual'"));
+					   "please retry without setting 'auto-focus-mode'"));
+		}
+	}
+
+	if (self->awb_mode.has_value()) {
+		if (infoMap.find(&controls::AwbMode) != infoMap.end()) {
+			state->initControls_.set(controls::AwbMode, self->auto_focus_range.value());
+		} else {
+			GST_ELEMENT_ERROR(self, RESOURCE, SETTINGS,
+					  ("Failed to set AWB"),
+					  ("AwbMode not supported by this camera, please "
+					   "retry without setting 'awb-mode'"));
+		}
+	}
+
+	if (self->auto_focus_range.has_value()) {
+		if (infoMap.find(&controls::AfMode) != infoMap.end()) {
+			state->initControls_.set(controls::AfMode, self->auto_focus_range.value());
+		} else {
+			GST_ELEMENT_ERROR(self, RESOURCE, SETTINGS,
+					  ("Failed to set auto focus range"),
+					  ("AfRange not supported by this camera, please "
+					   "retry without setting 'auto-focus-range'"));
 		}
 	}
 
@@ -745,6 +770,9 @@ gst_libcamera_src_set_property(GObject *object, guint prop_id,
 	case PROP_AWB_MODE:
 		self->awb_mode = static_cast<controls::AwbModeEnum>(g_value_get_enum(value));
 		break;
+	case PROP_AUTO_FOCUS_RANGE:
+		self->auto_focus_range = static_cast<controls::AfRangeEnum>(g_value_get_enum(value));
+		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
 		break;
@@ -767,6 +795,9 @@ gst_libcamera_src_get_property(GObject *object, guint prop_id, GValue *value,
 		break;
 	case PROP_AWB_MODE:
 		g_value_set_enum(value, static_cast<gint>(self->awb_mode.value_or(controls::AwbAuto)));
+		break;
+	case PROP_AUTO_FOCUS_RANGE:
+		g_value_set_enum(value, static_cast<gint>(self->auto_focus_range.value_or(controls::AfRangeNormal)));
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -978,4 +1009,16 @@ gst_libcamera_src_class_init(GstLibcameraSrcClass *klass)
 				 gst_libcamera_awb_get_type(),
 				 static_cast<gint>(controls::AwbAuto),
 				 G_PARAM_WRITABLE);
+
+	g_object_class_install_property(object_class, PROP_AWB_MODE, spec);
+
+	spec = g_param_spec_enum("auto-focus-range",
+				 "Set auto white auto-focus range",
+				 "Available options: AfRangeNormal, AfRangeMacro or "
+				 "AfRangeFull.",
+				 gst_libcamera_auto_focus_range_get_type(),
+				 static_cast<gint>(controls::AfRangeNormal),
+				 G_PARAM_WRITABLE);
+
+	g_object_class_install_property(object_class, PROP_AUTO_FOCUS_RANGE, spec);
 }
